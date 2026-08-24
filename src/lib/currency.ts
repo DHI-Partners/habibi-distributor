@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
  * при недоступности сети берутся запасные значения.
  */
 
-export type CurrencyCode = 'EUR' | 'RUB' | 'KZT' | 'KGS' | 'TRY'
+export type CurrencyCode = 'EUR' | 'RUB' | 'KZT' | 'UZS' | 'TRY'
 
 export interface Currency {
   code: CurrencyCode
@@ -21,7 +21,7 @@ export const CURRENCIES: Currency[] = [
   { code: 'EUR', symbol: '€', label: 'Евро', symbolBefore: true },
   { code: 'RUB', symbol: '₽', label: 'Рубли', symbolBefore: false },
   { code: 'KZT', symbol: '₸', label: 'Тенге', symbolBefore: false },
-  { code: 'KGS', symbol: 'сом', label: 'Сом', symbolBefore: false },
+  { code: 'UZS', symbol: 'сум', label: 'Сум', symbolBefore: false },
   { code: 'TRY', symbol: '₺', label: 'Лира', symbolBefore: false },
 ]
 
@@ -30,12 +30,12 @@ const FALLBACK_RATES: Record<CurrencyCode, number> = {
   EUR: 1,
   RUB: 96.75,
   KZT: 536,
-  KGS: 102.7,
+  UZS: 13804,
   TRY: 56.2,
 }
 
 const API_URL = 'https://open.er-api.com/v6/latest/EUR'
-const CACHE_KEY = 'habibi-rates-v1'
+const CACHE_KEY = 'habibi-rates-v2'
 const CACHE_TTL = 24 * 60 * 60 * 1000
 
 interface RatesState {
@@ -106,7 +106,8 @@ function roundNice(value: number) {
   if (value < 1000) return Math.round(value / 10) * 10
   if (value < 10000) return Math.round(value / 50) * 50
   if (value < 100000) return Math.round(value / 100) * 100
-  return Math.round(value / 500) * 500
+  if (value < 1000000) return Math.round(value / 1000) * 1000
+  return Math.round(value / 10000) * 10000
 }
 
 /** Разряды разделяем узким неразрывным пробелом: 144 200. */
