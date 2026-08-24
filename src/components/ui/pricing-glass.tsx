@@ -3,6 +3,14 @@
 import React, { useState } from "react";
 import { motion, useMotionValue, useMotionTemplate, Variants } from "framer-motion";
 import { Check, Sparkles, X } from "lucide-react";
+import {
+  CURRENCIES,
+  convertAmount,
+  formatMoney,
+  useRates,
+  type Currency,
+  type CurrencyCode,
+} from "@/lib/currency";
 
 const NOISE_PATTERN = 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.8%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")';
 
@@ -36,8 +44,6 @@ export interface PricingGlassProps {
   className?: string;
   /** Текст CTA-кнопки на карточке. */
   ctaLabel?: string;
-  /** Символ валюты перед ценой (по умолчанию $). */
-  currency?: string;
   /** Бейдж о бесплатном демо-периоде в шапке блока. */
   trialBadge?: string;
   /** Подпись о демо-периоде под CTA-кнопкой тарифа. */
@@ -51,28 +57,33 @@ function PricingCard({
   period,
   ctaLabel,
   currency,
+  rates,
   trialNote,
   onGetStarted,
 }: {
   tier: TierType;
   period: BillingPeriod;
   ctaLabel: string;
-  currency: string;
+  currency: Currency;
+  rates: Record<CurrencyCode, number>;
   trialNote?: string;
   onGetStarted?: (tier: TierType) => void;
 }) {
-  const price =
+  const priceEur =
     period === "monthly"
       ? tier.priceMonthly
       : period === "semi"
         ? tier.priceSemiAnnual
         : tier.priceAnnual;
 
-  // Экономия за выбранный период (в валюте), относительно помесячной оплаты.
+  // Цена в выбранной валюте (базовая — евро).
+  const currentNum = parseFloat(priceEur) || 0;
+  const price = convertAmount(currentNum, currency.code, rates);
+
+  // Экономия за выбранный период относительно помесячной оплаты.
   const monthlyNum = parseFloat(tier.priceMonthly) || 0;
-  const currentNum = parseFloat(price) || 0;
   const months = period === "semi" ? 6 : period === "annual" ? 12 : 1;
-  const savings = Math.round((monthlyNum - currentNum) * months);
+  const savingsEur = Math.round((monthlyNum - currentNum) * months);
   const savingsLabel = period === "semi" ? "за полгода" : "в год";
 
   const mouseX = useMotionValue(0);
@@ -184,15 +195,26 @@ function PricingCard({
             </div>
           ) : (
             <>
-              <span className="text-white/40 text-2xl font-medium tracking-tight">{currency}</span>
+              {currency.symbolBefore && (
+                <span className="text-white/40 text-2xl font-medium tracking-tight">
+                  {currency.symbol}
+                </span>
+              )}
               <div className="h-[60px] overflow-hidden flex items-center">
                 <span
                   key={price}
-                  className="block text-[60px] font-bold text-white tracking-tighter leading-none [animation:priceIn_0.4s_cubic-bezier(0.16,1,0.3,1)]"
+                  className={`block font-bold text-white tracking-tighter leading-none [animation:priceIn_0.4s_cubic-bezier(0.16,1,0.3,1)] ${
+                    price.length > 6 ? "text-[40px]" : price.length > 4 ? "text-[48px]" : "text-[60px]"
+                  }`}
                 >
                   {price}
                 </span>
               </div>
+              {!currency.symbolBefore && (
+                <span className="text-white/40 text-2xl font-medium tracking-tight ml-1.5">
+                  {currency.symbol}
+                </span>
+              )}
               <span className="text-white/40 text-lg font-medium ml-1">/мес</span>
             </>
           )}
@@ -200,13 +222,12 @@ function PricingCard({
 
         {/* Экономия за выбранный период — резервируем высоту, чтобы не прыгал layout */}
         <div className="mb-3 h-7">
-          {!tier.priceLabel && savings > 0 && (
+          {!tier.priceLabel && savingsEur > 0 && (
             <span
-              key={`${period}-${savings}`}
+              key={`${period}-${currency.code}-${savingsEur}`}
               className="inline-flex items-center rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 ring-1 ring-emerald-400/20 [animation:priceIn_0.35s_ease]"
             >
-              Экономия {currency}
-              {savings} {savingsLabel}
+              Экономия {formatMoney(savingsEur, currency, rates)} {savingsLabel}
             </span>
           )}
         </div>
@@ -265,12 +286,14 @@ export function PricingGlass({
   tiers,
   className,
   ctaLabel = "Начать",
-  currency = "$",
   trialBadge,
   trialNote,
   onGetStarted,
 }: PricingGlassProps) {
   const [period, setPeriod] = useState<BillingPeriod>("monthly");
+  const [currencyCode, setCurrencyCode] = useState<CurrencyCode>("EUR");
+  const { rates, updatedAt } = useRates();
+  const currency = CURRENCIES.find((c) => c.code === currencyCode) ?? CURRENCIES[0];
   const isDiscounted = period !== "monthly";
 
   const legoVariant: Variants = {
@@ -340,11 +363,39 @@ export function PricingGlass({
             <span className="rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-bold text-black">−30%</span>
           </button>
         </motion.div>
+
+        {/* Валюта: цены считаются от евро по текущему курсу */}
+        <motion.div variants={legoVariant} className="flex flex-col items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {CURRENCIES.map((c) => (
+              <button
+                key={c.code}
+                type="button"
+                onClick={() => setCurrencyCode(c.code)}
+                aria-pressed={c.code === currencyCode}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-xs font-semibold transition-all duration-200 sm:text-sm ${
+                  c.code === currencyCode
+                    ? "border-white/30 bg-white/10 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)]"
+                    : "border-white/10 bg-white/[0.03] text-white/50 hover:border-white/20 hover:text-white/80"
+                }`}
+              >
+                <span className="text-white/60">{c.symbol}</span>
+                {c.label}
+              </button>
+            ))}
+          </div>
+          {currencyCode !== "EUR" && (
+            <p className="max-w-md text-center text-xs leading-relaxed text-white/35">
+              Пересчёт по курсу{updatedAt ? ` на ${updatedAt}` : ""} — сумма ориентировочная.
+              Расчёты ведутся в евро.
+            </p>
+          )}
+        </motion.div>
       </div>
 
       <div className="relative w-full grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-6 lg:gap-8 items-stretch z-20">
         {tiers.map((tier) => (
-          <PricingCard key={tier.name} tier={tier} period={period} ctaLabel={ctaLabel} currency={currency} trialNote={trialNote} onGetStarted={onGetStarted} />
+          <PricingCard key={tier.name} tier={tier} period={period} ctaLabel={ctaLabel} currency={currency} rates={rates} trialNote={trialNote} onGetStarted={onGetStarted} />
         ))}
       </div>
 

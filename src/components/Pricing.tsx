@@ -101,7 +101,6 @@ export default function Pricing() {
           description="Выберите подходящий план и растите вместе с Habibi. При годовой оплате — выгоднее."
           tiers={TIERS}
           ctaLabel="Начать"
-          currency="€"
           trialBadge="14 дней бесплатно — демо-доступ ко всем функциям"
           trialNote="Первые 14 дней бесплатно, без карты"
           onGetStarted={(tier) => open(tier.name)}
