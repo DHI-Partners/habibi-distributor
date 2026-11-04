@@ -24,7 +24,9 @@ jobs:
     # Нативный ARM-раннер: прод-сервер — Oracle Ampere (aarch64), и образ
     # обязан быть под ту же архитектуру, иначе docker на сервере откажется
     # его запускать ("image ... does not provide the specified platform").
-    runs-on: ubuntu-24.04-arm
+    # ubuntu-latest + QEMU: образ — статика и nginx, эмуляция здесь быстрая.
+    # Нужны обе архитектуры: прод (aarch64) и новый сервер (x86_64).
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -39,6 +41,9 @@ jobs:
           owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "IMAGE=ghcr.io/${owner}/habibi-distributor" >> "$GITHUB_ENV"
           echo "образ: ghcr.io/${owner}/habibi-distributor"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -71,7 +76,7 @@ jobs:
           push: true
           # Явно, а не по архитектуре раннера: иначе замена раннера молча
           # меняет архитектуру образа, а узнаётся это только на сервере.
-          platforms: linux/arm64
+          platforms: linux/amd64,linux/arm64
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
@@ -81,7 +86,7 @@ jobs:
 
       - name: Итоговые теги
         run: |
-          echo "архитектура: linux/arm64"
+          echo "архитектуры: linux/amd64, linux/arm64"
           echo "${{ env.IMAGE }}:latest"
           echo "${{ env.IMAGE }}:${{ github.sha }}"
           if [ "${{ github.ref_type }}" = "tag" ]; then
@@ -106,7 +111,8 @@ jobs:
           key: ${{ secrets.HABIBI_SSH_KEY }}
           script: |
             set -e
-            cd ~/habibi_docker
+            # Новый прод: compose-проект в /opt (был ~/habibi_docker на старом VPS).
+            cd /opt/habibi_docker
 
             cp .env .env.bak-$(date +%Y%m%d-%H%M%S)
             sed -i "s|^DISTRIB_TAG=.*|DISTRIB_TAG=${{ github.ref_name }}|" .env
